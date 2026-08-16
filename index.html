@@ -3,17 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>우리나라 시너리 지도</title>
+  <title>X-Plane Korea Scenery Map</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
   <style>
     body { margin: 0; padding: 0; font-family: sans-serif; }
     #map { width: 100vw; height: 100vh; }
-    .admin-btn {
+    
+    /* 상단 컨트롤 패널 */
+    .control-panel {
       position: absolute; top: 10px; right: 10px; z-index: 1000;
-      background: #007bff; color: white; border: none; padding: 8px 16px;
+      background: rgba(255, 255, 255, 0.9); padding: 10px; border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; gap: 10px; align-items: center;
+    }
+    .admin-btn {
+      background: #007bff; color: white; border: none; padding: 6px 12px;
       border-radius: 4px; cursor: pointer; font-weight: bold;
     }
+    .filter-group label { margin-right: 8px; font-size: 14px; cursor: pointer; }
+
     .modal {
       display: none; position: fixed; z-index: 2000; left: 0; top: 0;
       width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);
@@ -28,7 +36,15 @@
 </head>
 <body>
 
-  <button class="admin-btn" id="adminToggleBtn" onclick="openLoginModal()">관리자 로그인</button>
+  <!-- 컨트롤 패널 (유료/무료 토글 & 관리자 로그인) -->
+  <div class="control-panel">
+    <div class="filter-group">
+      <label><input type="checkbox" id="showFree" checked onchange="filterSceneries()"> 무료 보기</label>
+      <label><input type="checkbox" id="showPayware" checked onchange="filterSceneries()"> 유료 보기</label>
+    </div>
+    <button class="admin-btn" id="adminToggleBtn" onclick="openLoginModal()">관리자 로그인</button>
+  </div>
+
   <div id="map"></div>
 
   <!-- 비밀번호 입력 모달 -->
@@ -51,7 +67,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 
   <script>
-    // 1. Firebase 설정 (본인의 Firebase 키로 변경하세요)
+    // 1. Firebase 설정 (본인의 Firebase 키로 변경)
     const firebaseConfig = {
       apiKey: "YOUR_FIREBASE_API_KEY",
       authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
@@ -66,13 +82,14 @@
     const database = firebase.database();
     const sceneryRef = database.ref('sceneries');
 
-    // 2. 지도 초기화 (대한민국 중심)
+    // 2. 지도 초기화 (구글 하이브리드)
     const map = L.map('map').setView([36.5, 127.5], 7);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
+    L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+      attribution: '&copy; Google Maps'
     }).addTo(map);
 
     let isAdmin = false;
+    let rawSceneryData = {}; // 원본 데이터 저장용
     let drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
 
@@ -84,7 +101,7 @@
       edit: { featureGroup: drawnItems, remove: true }
     });
 
-    // 3. 관리자 로그인 처리
+    // 3. 관리자 로그인 (비밀번호: tlqkf123)
     function openLoginModal() {
       if(isAdmin) {
         isAdmin = false;
@@ -106,25 +123,32 @@
       if(input === 'tlqkf123') {
         isAdmin = true;
         map.addControl(drawControl);
-        document.getElementById('adminToggleBtn').innerText = '관리자 모드 (로그아웃)';
+        document.getElementById('adminToggleBtn').innerText = '관리자 (로그아웃)';
         closeLoginModal();
-        alert('관리자로 로그인되었습니다. 마커 및 영역 그리기가 가능합니다.');
+        alert('관리자로 로그인되었습니다.');
       } else {
         alert('비밀번호가 틀렸습니다.');
       }
     }
 
-    // 4. DB 저장 및 삭제 이벤트 handling
+    // 4. DB 저장 및 삭제
     map.on(L.Draw.Event.CREATED, function (e) {
       if(!isAdmin) return;
       const layer = e.layer;
       const type = e.layerType;
       
-      const title = prompt("시너리 이름/설명을 입력하세요:", "새 시너리");
+      const title = prompt("시너리 이름을 입력하세요:", "새 시너리");
       if(!title) return;
 
+      const isPayware = confirm("유료(Payware) 시너리인가요?\n[확인] = 유료, [취소] = 무료");
+      const paywareStatus = isPayware ? "payware" : "free";
+
       let geoJsonData = layer.toGeoJSON();
-      geoJsonData.properties = { title: title, type: type };
+      geoJsonData.properties = { 
+        title: title, 
+        type: type,
+        payware: paywareStatus
+      };
 
       const newRef = sceneryRef.push();
       newRef.set(geoJsonData);
@@ -139,24 +163,41 @@
       });
     });
 
-    // 5. Firebase 실시간 데이터 동기화 (화면 표시)
+    // 5. 실시간 DB 수신 및 필터링
     sceneryRef.on('value', function(snapshot) {
-      drawnItems.clearLayers();
-      const data = snapshot.val();
-      for(let id in data) {
-        const item = data[id];
-        const layer = L.geoJSON(item, {
-          onEachFeature: function(feature, layer) {
-            layer.bindPopup(feature.properties.title || "시너리 정보");
-          }
-        });
-        
-        layer.eachLayer(function(l) {
-          l.firebaseId = id;
-          drawnItems.addLayer(l);
-        });
-      }
+      rawSceneryData = snapshot.val() || {};
+      filterSceneries();
     });
+
+    function filterSceneries() {
+      drawnItems.clearLayers();
+
+      const showFree = document.getElementById('showFree').checked;
+      const showPayware = document.getElementById('showPayware').checked;
+
+      for(let id in rawSceneryData) {
+        const item = rawSceneryData[id];
+        const paywareStatus = item.properties.payware || "free";
+
+        // 토글 상태 체크
+        if ((paywareStatus === "free" && showFree) || (paywareStatus === "payware" && showPayware)) {
+          const layer = L.geoJSON(item, {
+            style: function() {
+              return { color: paywareStatus === "payware" ? "#ff4d4d" : "#3388ff" };
+            },
+            onEachFeature: function(feature, layer) {
+              const tag = feature.properties.payware === "payware" ? "[유료]" : "[무료]";
+              layer.bindPopup(`<b>${tag} ${feature.properties.title}</b>`);
+            }
+          });
+          
+          layer.eachLayer(function(l) {
+            l.firebaseId = id;
+            drawnItems.addLayer(l);
+          });
+        }
+      }
+    }
   </script>
 </body>
 </html>
