@@ -7,31 +7,43 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
   <style>
-    body { margin: 0; padding: 0; font-family: sans-serif; }
-    #map { width: 100vw; height: 100vh; }
-    
-    .control-panel {
-      position: absolute; top: 10px; right: 10px; z-index: 1000;
-      background: rgba(255, 255, 255, 0.95); padding: 10px 15px; border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
-    }
-    .admin-btn {
-      background: #007bff; color: white; border: none; padding: 6px 12px;
-      border-radius: 4px; cursor: pointer; font-weight: bold;
-    }
-    .action-btn {
-      background: #28a745; color: white; border: none; padding: 6px 12px;
-      border-radius: 4px; cursor: pointer; font-weight: bold; display: none;
-    }
-    .action-btn.airport-btn { background: #17a2b8; }
-    .action-btn.active { background: #dc3545; }
-    .filter-group label { margin-right: 8px; font-size: 14px; cursor: pointer; font-weight: bold; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 0; font-family: 'Pretendard', sans-serif; }
+    #map { width: 100vw; height: 100vh; z-index: 1; }
 
-    /* 영역 선택 완료 안내 바 */
+    /* 상단 제어바 (유료/무료, 관리자 로그인) */
+    .top-panel {
+      position: absolute; top: 15px; right: 15px; z-index: 1000;
+      background: rgba(255, 255, 255, 0.95); padding: 10px 16px; border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; gap: 15px; align-items: center;
+    }
+    .filter-group { display: flex; gap: 10px; font-weight: bold; font-size: 14px; }
+    .filter-group label { cursor: pointer; display: flex; align-items: center; gap: 4px; }
+
+    .admin-login-btn {
+      background: #2b303a; color: white; border: none; padding: 8px 14px;
+      border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px;
+    }
+
+    /* 좌측 작업 메뉴 (추가 버튼들) */
+    .left-menu {
+      position: absolute; top: 15px; left: 15px; z-index: 1000;
+      display: none; flex-direction: column; gap: 8px; width: 150px;
+    }
+    .menu-btn {
+      background: #ffffff; color: #333; border: 2px solid #007bff;
+      padding: 12px; border-radius: 8px; font-weight: bold; font-size: 14px;
+      cursor: pointer; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+      transition: all 0.2s ease;
+    }
+    .menu-btn:hover { background: #f0f7ff; }
+    .menu-btn.active { background: #dc3545; color: white; border-color: #dc3545; }
+
+    /* 1도 격자 선택 모드 하단 완료바 */
     .selection-bar {
-      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;
+      position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%); z-index: 1000;
       background: rgba(0, 0, 0, 0.85); color: white; padding: 12px 24px; border-radius: 30px;
-      display: none; gap: 15px; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      display: none; gap: 15px; align-items: center; box-shadow: 0 4px 16px rgba(0,0,0,0.3);
     }
     .selection-bar button {
       padding: 6px 16px; border: none; border-radius: 20px; font-weight: bold; cursor: pointer;
@@ -39,39 +51,47 @@
     .btn-complete { background: #28a745; color: white; }
     .btn-cancel { background: #6c757d; color: white; }
 
+    /* 입력 모달 (팝업창) */
     .modal {
       display: none; position: fixed; z-index: 2000; left: 0; top: 0;
       width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);
       justify-content: center; align-items: center;
     }
     .modal-content {
-      background: white; padding: 20px; border-radius: 8px; width: 320px; text-align: left;
+      background: white; padding: 24px; border-radius: 12px; width: 340px; text-align: left;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
     }
-    .modal-content h3 { margin-top: 0; text-align: center; }
-    .modal-content label { font-size: 13px; font-weight: bold; display: block; margin-top: 8px; }
+    .modal-content h3 { margin-top: 0; text-align: center; color: #222; }
+    .modal-content label { font-size: 13px; font-weight: bold; display: block; margin-top: 10px; color: #555; }
     .modal-content input, .modal-content select, .modal-content textarea {
-      width: 100%; padding: 6px; margin-top: 4px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px;
+      width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px;
     }
-    .modal-btns { margin-top: 15px; text-align: center; }
-    .modal-btns button { padding: 6px 14px; margin: 0 4px; cursor: pointer; }
+    .modal-btns { margin-top: 18px; text-align: center; }
+    .modal-btns button { padding: 8px 18px; margin: 0 4px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    .btn-save { background: #007bff; color: white; }
+    .btn-close { background: #6c757d; color: white; }
   </style>
 </head>
 <body>
 
-  <div class="control-panel">
+  <div class="top-panel">
     <div class="filter-group">
       <label><input type="checkbox" id="showFree" checked onchange="filterSceneries()"> 무료 보기</label>
       <label><input type="checkbox" id="showPayware" checked onchange="filterSceneries()"> 유료 보기</label>
     </div>
-    <button class="action-btn airport-btn" id="addAirportBtn" onclick="toggleAirportMode()">공항/마커 추가</button>
-    <button class="action-btn" id="gridSelectBtn" onclick="toggleGridSelectMode()">1도 격자 선택 모드</button>
-    <button class="admin-btn" id="adminToggleBtn" onclick="openLoginModal()">관리자 로그인</button>
+    <button class="admin-login-btn" id="adminToggleBtn" onclick="openLoginModal()">관리자 로그인</button>
+  </div>
+
+  <div class="left-menu" id="leftMenu">
+    <button class="menu-btn" id="btnAirport" onclick="startAirportMode()">추가 (공항)</button>
+    <button class="menu-btn" id="btnO4xp" onclick="startO4xpMode()">추가 (o4xp 시너리)</button>
+    <button class="menu-btn" id="btnCity" onclick="startCityMode()">추가 (도심 시너리)</button>
   </div>
 
   <div class="selection-bar" id="selectionBar">
     <span id="selectedCountText">선택된 영역: 0개 (1도 격자)</span>
-    <button class="btn-complete" onclick="finishGridSelection()">선택 완료 및 정보 입력</button>
-    <button class="btn-cancel" onclick="cancelGridSelection()">취소</button>
+    <button class="btn-complete" onclick="finishO4xpSelection()">선택 완료</button>
+    <button class="btn-cancel" onclick="cancelO4xpSelection()">취소</button>
   </div>
 
   <div id="map"></div>
@@ -81,8 +101,8 @@
       <h3>관리자 로그인</h3>
       <input type="password" id="adminPassword" placeholder="비밀번호 입력">
       <div class="modal-btns">
-        <button onclick="checkPassword()">확인</button>
-        <button onclick="closeLoginModal()">취소</button>
+        <button class="btn-save" onclick="checkPassword()">확인</button>
+        <button class="btn-close" onclick="closeLoginModal()">취소</button>
       </div>
     </div>
   </div>
@@ -90,8 +110,9 @@
   <div id="sceneryModal" class="modal">
     <div class="modal-content">
       <h3 id="modalHeaderTitle">시너리 정보 입력</h3>
+      
       <label>이름 / 공항명</label>
-      <input type="text" id="sceneryTitle" placeholder="예: RKSI 인천국제공항 / 서울 도심">
+      <input type="text" id="sceneryTitle" placeholder="예: RKSI 인천공항 / 서울 도심">
 
       <label>유료 / 무료 구분</label>
       <select id="sceneryType">
@@ -106,20 +127,19 @@
       <textarea id="sceneryDesc" rows="3" placeholder="시너리 관련 추가 설명을 입력하세요"></textarea>
 
       <div class="modal-btns">
-        <button onclick="saveSceneryData()">저장</button>
-        <button onclick="closeSceneryModal()">취소</button>
+        <button class="btn-save" onclick="saveSceneryData()">저장</button>
+        <button class="btn-close" onclick="closeSceneryModal()">취소</button>
       </div>
     </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 
   <script>
-    // 1. Firebase 설정
+    // 1. Firebase 연동
     const firebaseConfig = {
       apiKey: "YOUR_FIREBASE_API_KEY",
       authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
@@ -134,15 +154,14 @@
     const database = firebase.database();
     const sceneryRef = database.ref('sceneries');
 
-    // 2. 지도 초기화 (Google Hybrid)
+    // 2. 지도 생성 (Google Hybrid 타일)
     const map = L.map('map').setView([36.5, 127.5], 7);
     L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
       attribution: '&copy; Google Maps'
     }).addTo(map);
 
     let isAdmin = false;
-    let isGridMode = false;
-    let isAirportMode = false;
+    let currentMode = null; // 'airport', 'o4xp', 'city'
     let selectedGrids = {}; 
     let tempHighlightGroup = L.featureGroup().addTo(map);
 
@@ -151,28 +170,15 @@
     let drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
 
-    let drawControl = new L.Control.Draw({
-      draw: {
-        polyline: false,
-        polygon: true,   // 도심 시너리용 다각형
-        rectangle: true, // 사각형
-        marker: true,    // 기본 마커
-        circle: false,
-        circlemarker: false
-      },
-      edit: { featureGroup: drawnItems, remove: true }
-    });
+    let polygonDrawer = new L.Draw.Polygon(map);
 
-    // 3. 관리자 로그인
+    // 3. 관리자 로그인 처리
     function openLoginModal() {
       if(isAdmin) {
         isAdmin = false;
-        map.removeControl(drawControl);
         document.getElementById('adminToggleBtn').innerText = '관리자 로그인';
-        document.getElementById('gridSelectBtn').style.display = 'none';
-        document.getElementById('addAirportBtn').style.display = 'none';
-        cancelGridSelection();
-        cancelAirportMode();
+        document.getElementById('leftMenu').style.display = 'none';
+        resetModes();
         alert('로그아웃 되었습니다.');
       } else {
         document.getElementById('loginModal').style.display = 'flex';
@@ -187,152 +193,115 @@
     function checkPassword() {
       if(document.getElementById('adminPassword').value === 'tlqkf123') {
         isAdmin = true;
-        map.addControl(drawControl);
         document.getElementById('adminToggleBtn').innerText = '관리자 (로그아웃)';
-        document.getElementById('gridSelectBtn').style.display = 'inline-block';
-        document.getElementById('addAirportBtn').style.display = 'inline-block';
+        document.getElementById('leftMenu').style.display = 'flex';
         closeLoginModal();
-        alert('관리자 로그인 완료!\n\n- [공항/마커 추가]: 지도 클릭 시 공항 위치에 마커 추가\n- [1도 격자 선택 모드]: 클릭하여 1도 영역 추가/취소');
       } else {
         alert('비밀번호가 틀렸습니다.');
       }
     }
 
-    // 4. 공항 추가 모드 토글
-    function toggleAirportMode() {
-      if(isGridMode) cancelGridSelection();
-      isAirportMode = !isAirportMode;
-      const btn = document.getElementById('addAirportBtn');
-      
-      if(isAirportMode) {
-        btn.classList.add('active');
-        btn.innerText = '공항 추가 취소';
-      } else {
-        cancelAirportMode();
-      }
-    }
-
-    function cancelAirportMode() {
-      isAirportMode = false;
-      const btn = document.getElementById('addAirportBtn');
-      btn.classList.remove('active');
-      btn.innerText = '공항/마커 추가';
-    }
-
-    // 5. 1도 격자 클릭 및 선택/해제 기능
-    function toggleGridSelectMode() {
-      if(isAirportMode) cancelAirportMode();
-      isGridMode = !isGridMode;
-      const btn = document.getElementById('gridSelectBtn');
-      
-      if(isGridMode) {
-        btn.classList.add('active');
-        btn.innerText = '선택 종료';
-        document.getElementById('selectionBar').style.display = 'flex';
-      } else {
-        cancelGridSelection();
-      }
-    }
-
-    // 지도 클릭 이벤트 (공항 추가 및 1도 격자 클릭 토글)
-    map.on('click', function(e) {
-      if (!isAdmin) return;
-
-      // 공항 추가 모드
-      if (isAirportMode) {
-        pendingLayer = L.marker(e.latlng);
-        document.getElementById('modalHeaderTitle').innerText = "공항 / 마커 정보 입력";
-        document.getElementById('sceneryTitle').value = "새 공항";
-        document.getElementById('sceneryType').value = 'free';
-        document.getElementById('sceneryLink').value = '';
-        document.getElementById('sceneryDesc').value = '';
-        document.getElementById('sceneryModal').style.display = 'flex';
-        cancelAirportMode();
-        return;
-      }
-
-      // 1도 격자 선택 모드 (클릭시 선택/해제)
-      if (isGridMode) {
-        toggleGridAtLatLng(e.latlng);
-      }
-    });
-
-    function toggleGridAtLatLng(latlng) {
-      const lat = Math.floor(latlng.lat);
-      const lng = Math.floor(latlng.lng);
-      const key = `${lat}_${lng}`;
-
-      // 이미 선택되어 있으면 제거 (선택 취소)
-      if (selectedGrids[key]) {
-        tempHighlightGroup.removeLayer(selectedGrids[key].layer);
-        delete selectedGrids[key];
-      } else {
-        // 선택되지 않았으면 추가
-        const bounds = [[lat, lng], [lat + 1, lng + 1]];
-        const rect = L.rectangle(bounds, {
-          color: "#3388ff",
-          weight: 2,
-          fillColor: "#0055ff",
-          fillOpacity: 0.45
-        });
-
-        tempHighlightGroup.addLayer(rect);
-        selectedGrids[key] = { bounds: bounds, layer: rect };
-      }
-
-      const count = Object.keys(selectedGrids).length;
-      document.getElementById('selectedCountText').innerText = `선택된 영역: ${count}개 (1도 격자)`;
-    }
-
-    function finishGridSelection() {
-      const keys = Object.keys(selectedGrids);
-      if (keys.length === 0) {
-        alert('선택된 영역이 없습니다.');
-        return;
-      }
-
-      document.getElementById('modalHeaderTitle').innerText = "포토시너리 정보 입력";
-      document.getElementById('sceneryTitle').value = `포토시너리 (${keys.length}개 격자 구역)`;
-      document.getElementById('sceneryType').value = 'free';
-      document.getElementById('sceneryLink').value = '';
-      document.getElementById('sceneryDesc').value = '';
-      document.getElementById('sceneryModal').style.display = 'flex';
-    }
-
-    function cancelGridSelection() {
-      isGridMode = false;
+    // 모드 초기화
+    function resetModes() {
+      currentMode = null;
+      document.querySelectorAll('.menu-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('selectionBar').style.display = 'none';
       selectedGrids = {};
       tempHighlightGroup.clearLayers();
-      
-      const btn = document.getElementById('gridSelectBtn');
-      btn.classList.remove('active');
-      btn.innerText = '1도 격자 선택 모드';
-      document.getElementById('selectionBar').style.display = 'none';
+      polygonDrawer.disable();
     }
 
-    // Leaflet Draw 도구 생성 이벤트
+    // 4. 모드별 동작 설정
+    // A. 공항 추가 모드
+    function startAirportMode() {
+      resetModes();
+      currentMode = 'airport';
+      document.getElementById('btnAirport').classList.add('active');
+    }
+
+    // B. o4xp 1도 단위 시너리 추가 모드
+    function startO4xpMode() {
+      resetModes();
+      currentMode = 'o4xp';
+      document.getElementById('btnO4xp').classList.add('active');
+      document.getElementById('selectionBar').style.display = 'flex';
+    }
+
+    // C. 도심 시너리 (다각형) 추가 모드
+    function startCityMode() {
+      resetModes();
+      currentMode = 'city';
+      document.getElementById('btnCity').classList.add('active');
+      polygonDrawer.enable(); // 다각형 그리기 활성화
+    }
+
+    // 5. 지도 클릭 이벤트 처리
+    map.on('click', function(e) {
+      if (!isAdmin || !currentMode) return;
+
+      // [공항] 모드 클릭 시
+      if (currentMode === 'airport') {
+        pendingLayer = L.marker(e.latlng);
+        openModalForData("공항 추가", "새 공항");
+        resetModes();
+      } 
+      // [o4xp] 모드 클릭 시 (1도 단위 격자 토글)
+      else if (currentMode === 'o4xp') {
+        const lat = Math.floor(e.latlng.lat);
+        const lng = Math.floor(e.latlng.lng);
+        const key = `${lat}_${lng}`;
+
+        if (selectedGrids[key]) {
+          tempHighlightGroup.removeLayer(selectedGrids[key].layer);
+          delete selectedGrids[key];
+        } else {
+          const bounds = [[lat, lng], [lat + 1, lng + 1]];
+          const rect = L.rectangle(bounds, { color: "#007bff", weight: 2, fillColor: "#0055ff", fillOpacity: 0.4 });
+          tempHighlightGroup.addLayer(rect);
+          selectedGrids[key] = { bounds: bounds, layer: rect };
+        }
+
+        const count = Object.keys(selectedGrids).length;
+        document.getElementById('selectedCountText').innerText = `선택된 영역: ${count}개 (1도 격자)`;
+      }
+    });
+
+    // [도심 시너리] 다각형 그리기 완료 시
     map.on(L.Draw.Event.CREATED, function (e) {
-      if(!isAdmin) return;
-      pendingLayer = e.layer;
-      
-      let defaultTitle = "새 시너리 구역";
-      if(e.layerType === "polygon") defaultTitle = "도심 시너리 구역";
-      if(e.layerType === "marker") defaultTitle = "새 공항 마커";
-      
-      document.getElementById('modalHeaderTitle').innerText = "시너리 정보 입력";
-      document.getElementById('sceneryTitle').value = defaultTitle;
+      if (e.layerType === 'polygon') {
+        pendingLayer = e.layer;
+        openModalForData("도심 시너리 추가", "서울/도심 시너리");
+        resetModes();
+      }
+    });
+
+    // o4xp 선택 완료 버튼
+    function finishO4xpSelection() {
+      const keys = Object.keys(selectedGrids);
+      if (keys.length === 0) return alert('선택된 격자가 없습니다.');
+      openModalForData("o4xp 시너리 추가", `o4xp 시너리 (${keys.length}개 격자)`);
+    }
+
+    function cancelO4xpSelection() {
+      resetModes();
+    }
+
+    // 모달 표시 함수
+    function openModalForData(headerTitle, defaultName) {
+      document.getElementById('modalHeaderTitle').innerText = headerTitle;
+      document.getElementById('sceneryTitle').value = defaultName;
       document.getElementById('sceneryType').value = 'free';
       document.getElementById('sceneryLink').value = '';
       document.getElementById('sceneryDesc').value = '';
       document.getElementById('sceneryModal').style.display = 'flex';
-    });
+    }
 
     function closeSceneryModal() {
       document.getElementById('sceneryModal').style.display = 'none';
       pendingLayer = null;
     }
 
-    // DB 저장 처리 (속성창 데이터 통일)
+    // 6. DB 데이터 저장 (공통 속성 적용)
     function saveSceneryData() {
       const title = document.getElementById('sceneryTitle').value || "이름 없음";
       const payware = document.getElementById('sceneryType').value;
@@ -343,43 +312,23 @@
 
       const gridKeys = Object.keys(selectedGrids);
       if (gridKeys.length > 0) {
-        let layersArr = [];
-        gridKeys.forEach(k => {
-          layersArr.push(L.rectangle(selectedGrids[k].bounds));
-        });
-        const group = L.featureGroup(layersArr);
-        geoJsonData = group.toGeoJSON();
+        let layersArr = gridKeys.map(k => L.rectangle(selectedGrids[k].bounds));
+        geoJsonData = L.featureGroup(layersArr).toGeoJSON();
       } else if (pendingLayer) {
         geoJsonData = pendingLayer.toGeoJSON();
       } else {
         return;
       }
 
-      geoJsonData.properties = {
-        title: title,
-        payware: payware,
-        link: link,
-        desc: desc
-      };
+      geoJsonData.properties = { title, payware, link, desc };
 
-      const newRef = sceneryRef.push();
-      newRef.set(geoJsonData);
+      sceneryRef.push().set(geoJsonData);
 
-      cancelGridSelection();
+      resetModes();
       closeSceneryModal();
     }
 
-    // 삭제 처리
-    map.on(L.Draw.Event.DELETED, function (e) {
-      if(!isAdmin) return;
-      e.layers.eachLayer(function (layer) {
-        if(layer.firebaseId) {
-          sceneryRef.child(layer.firebaseId).remove();
-        }
-      });
-    });
-
-    // 6. DB 수신 및 표시
+    // 7. DB 데이터 실시간 표시 및 필터링
     sceneryRef.on('value', function(snapshot) {
       rawSceneryData = snapshot.val() || {};
       filterSceneries();
@@ -399,13 +348,7 @@
           const isPay = paywareStatus === "payware";
           
           const layer = L.geoJSON(item, {
-            style: function() {
-              return { 
-                color: isPay ? "#ff3333" : "#0066ff", 
-                weight: 2, 
-                fillOpacity: 0.35 
-              };
-            },
+            style: () => ({ color: isPay ? "#ff3333" : "#0066ff", weight: 2, fillOpacity: 0.35 }),
             onEachFeature: function(feature, layer) {
               const props = feature.properties;
               const tag = props.payware === "payware" ? "<b style='color:red;'>[유료]</b>" : "<b style='color:blue;'>[무료]</b>";
