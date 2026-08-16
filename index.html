@@ -10,17 +10,16 @@
     body { margin: 0; padding: 0; font-family: sans-serif; }
     #map { width: 100vw; height: 100vh; }
     
-    /* 상단 컨트롤 패널 */
     .control-panel {
       position: absolute; top: 10px; right: 10px; z-index: 1000;
-      background: rgba(255, 255, 255, 0.9); padding: 10px; border-radius: 6px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.3); display: flex; gap: 10px; align-items: center;
+      background: rgba(255, 255, 255, 0.95); padding: 10px 15px; border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; gap: 12px; align-items: center;
     }
     .admin-btn {
-      background: #007bff; color: white; border: none; padding: 6px 12px;
+      background: #007bff; color: white; border: none; padding: 6px 14px;
       border-radius: 4px; cursor: pointer; font-weight: bold;
     }
-    .filter-group label { margin-right: 8px; font-size: 14px; cursor: pointer; }
+    .filter-group label { margin-right: 8px; font-size: 14px; cursor: pointer; font-weight: bold; }
 
     .modal {
       display: none; position: fixed; z-index: 2000; left: 0; top: 0;
@@ -28,15 +27,23 @@
       justify-content: center; align-items: center;
     }
     .modal-content {
-      background: white; padding: 20px; border-radius: 8px; width: 300px; text-align: center;
+      background: white; padding: 20px; border-radius: 8px; width: 330px; text-align: left;
     }
-    .modal-content input { width: 80%; padding: 8px; margin: 10px 0; }
-    .modal-content button { padding: 8px 16px; margin: 5px; cursor: pointer; }
+    .modal-content h3 { margin-top: 0; text-align: center; }
+    .modal-content label { font-size: 13px; font-weight: bold; display: block; margin-top: 8px; }
+    .modal-content input, .modal-content select, .modal-content textarea {
+      width: 100%; padding: 6px; margin-top: 4px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px;
+    }
+    .grid-size-group {
+      display: flex; gap: 8px; margin-top: 4px;
+    }
+    .grid-size-group div { flex: 1; }
+    .modal-btns { margin-top: 15px; text-align: center; }
+    .modal-btns button { padding: 6px 14px; margin: 0 4px; cursor: pointer; }
   </style>
 </head>
 <body>
 
-  <!-- 컨트롤 패널 (유료/무료 토글 & 관리자 로그인) -->
   <div class="control-panel">
     <div class="filter-group">
       <label><input type="checkbox" id="showFree" checked onchange="filterSceneries()"> 무료 보기</label>
@@ -47,14 +54,53 @@
 
   <div id="map"></div>
 
-  <!-- 비밀번호 입력 모달 -->
+  <!-- 관리자 로그인 모달 -->
   <div id="loginModal" class="modal">
-    <div class="modal-content">
+    <div class="modal-content" style="text-align: center;">
       <h3>관리자 로그인</h3>
       <input type="password" id="adminPassword" placeholder="비밀번호 입력">
-      <div>
+      <div class="modal-btns">
         <button onclick="checkPassword()">확인</button>
         <button onclick="closeLoginModal()">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 시너리 정보 입력 및 1도 단위 범위 지정 모달 -->
+  <div id="sceneryModal" class="modal">
+    <div class="modal-content">
+      <h3>시너리 정보 및 범위 설정</h3>
+      <label>시너리 이름</label>
+      <input type="text" id="sceneryTitle" placeholder="예: 한반도 남부 포토시너리">
+      
+      <!-- 1도 단위 범위 확장 설정 -->
+      <label>격자 범위 지정 (1도 단위 커스텀)</label>
+      <div class="grid-size-group">
+        <div>
+          <span style="font-size:11px;">위도 크기(도)</span>
+          <input type="number" id="latSpan" value="1" min="1" max="10">
+        </div>
+        <div>
+          <span style="font-size:11px;">경도 크기(도)</span>
+          <input type="number" id="lngSpan" value="1" min="1" max="10">
+        </div>
+      </div>
+
+      <label>유료 / 무료 구분</label>
+      <select id="sceneryType">
+        <option value="free">무료 (Free)</option>
+        <option value="payware">유료 (Payware)</option>
+      </select>
+
+      <label>다운로드 / 판매 링크</label>
+      <input type="url" id="sceneryLink" placeholder="https://...">
+
+      <label>상세 설명</label>
+      <textarea id="sceneryDesc" rows="3" placeholder="시너리 관련 설명 입력"></textarea>
+
+      <div class="modal-btns">
+        <button onclick="saveSceneryData()">저장</button>
+        <button onclick="closeSceneryModal()">취소</button>
       </div>
     </div>
   </div>
@@ -62,12 +108,11 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
   
-  <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 
   <script>
-    // 1. Firebase 설정 (본인의 Firebase 키로 변경)
+    // 1. Firebase 설정 (본인 프로젝트 설정으로 교체)
     const firebaseConfig = {
       apiKey: "YOUR_FIREBASE_API_KEY",
       authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
@@ -82,14 +127,17 @@
     const database = firebase.database();
     const sceneryRef = database.ref('sceneries');
 
-    // 2. 지도 초기화 (구글 하이브리드)
+    // 2. 지도 초기화 (Google Hybrid)
     const map = L.map('map').setView([36.5, 127.5], 7);
     L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
       attribution: '&copy; Google Maps'
     }).addTo(map);
 
     let isAdmin = false;
-    let rawSceneryData = {}; // 원본 데이터 저장용
+    let rawSceneryData = {};
+    let baseClickLat = null;
+    let baseClickLng = null;
+    let pendingLayer = null;
     let drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
 
@@ -101,7 +149,7 @@
       edit: { featureGroup: drawnItems, remove: true }
     });
 
-    // 3. 관리자 로그인 (비밀번호: tlqkf123)
+    // 3. 관리자 로그인
     function openLoginModal() {
       if(isAdmin) {
         isAdmin = false;
@@ -119,41 +167,96 @@
     }
 
     function checkPassword() {
-      const input = document.getElementById('adminPassword').value;
-      if(input === 'tlqkf123') {
+      if(document.getElementById('adminPassword').value === 'tlqkf123') {
         isAdmin = true;
         map.addControl(drawControl);
         document.getElementById('adminToggleBtn').innerText = '관리자 (로그아웃)';
         closeLoginModal();
-        alert('관리자로 로그인되었습니다.');
+        alert('관리자 모드 활성화\n\n지도 클릭 시 1도 단위 범위(위도/경도 크기 지정)로 시너리를 추가할 수 있습니다.');
       } else {
         alert('비밀번호가 틀렸습니다.');
       }
     }
 
-    // 4. DB 저장 및 삭제
+    // 4. 지도 클릭 시 선택한 위치 기반 1도 단위 범위 지정
+    map.on('click', function(e) {
+      if (!isAdmin) return;
+      if (document.querySelector('.leaflet-draw-actions')) return;
+
+      baseClickLat = Math.floor(e.latlng.lat);
+      baseClickLng = Math.floor(e.latlng.lng);
+      pendingLayer = null; // 클릭 기반 생성 처리
+
+      document.getElementById('sceneryTitle').value = `포토시너리 (+${baseClickLat}+${baseClickLng})`;
+      document.getElementById('latSpan').value = 1;
+      document.getElementById('lngSpan').value = 1;
+      document.getElementById('sceneryType').value = 'free';
+      document.getElementById('sceneryLink').value = '';
+      document.getElementById('sceneryDesc').value = '';
+      
+      document.getElementById('sceneryModal').style.display = 'flex';
+    });
+
+    // 도구함으로 직접 드래그해서 그릴 때
     map.on(L.Draw.Event.CREATED, function (e) {
       if(!isAdmin) return;
-      const layer = e.layer;
-      const type = e.layerType;
+      pendingLayer = e.layer;
+      baseClickLat = null;
+      baseClickLng = null;
+
+      document.getElementById('sceneryTitle').value = "새 시너리 구역";
+      document.getElementById('latSpan').value = 1;
+      document.getElementById('lngSpan').value = 1;
+      document.getElementById('sceneryType').value = 'free';
+      document.getElementById('sceneryLink').value = '';
+      document.getElementById('sceneryDesc').value = '';
       
-      const title = prompt("시너리 이름을 입력하세요:", "새 시너리");
-      if(!title) return;
+      document.getElementById('sceneryModal').style.display = 'flex';
+    });
 
-      const isPayware = confirm("유료(Payware) 시너리인가요?\n[확인] = 유료, [취소] = 무료");
-      const paywareStatus = isPayware ? "payware" : "free";
+    function closeSceneryModal() {
+      document.getElementById('sceneryModal').style.display = 'none';
+      pendingLayer = null;
+    }
 
-      let geoJsonData = layer.toGeoJSON();
-      geoJsonData.properties = { 
-        title: title, 
-        type: type,
-        payware: paywareStatus
+    // DB 저장
+    function saveSceneryData() {
+      const title = document.getElementById('sceneryTitle').value || "이름 없음";
+      const payware = document.getElementById('sceneryType').value;
+      const link = document.getElementById('sceneryLink').value;
+      const desc = document.getElementById('sceneryDesc').value;
+
+      let targetLayer = pendingLayer;
+
+      // 클릭 생성인 경우 설정된 1도 단위 위도/경도 크기 적용
+      if (!targetLayer && baseClickLat !== null && baseClickLng !== null) {
+        const latSpan = parseInt(document.getElementById('latSpan').value) || 1;
+        const lngSpan = parseInt(document.getElementById('lngSpan').value) || 1;
+
+        const bounds = [
+          [baseClickLat, baseClickLng], 
+          [baseClickLat + latSpan, baseClickLng + lngSpan]
+        ];
+        targetLayer = L.rectangle(bounds);
+      }
+
+      if (!targetLayer) return;
+
+      let geoJsonData = targetLayer.toGeoJSON();
+      geoJsonData.properties = {
+        title: title,
+        payware: payware,
+        link: link,
+        desc: desc
       };
 
       const newRef = sceneryRef.push();
       newRef.set(geoJsonData);
-    });
 
+      closeSceneryModal();
+    }
+
+    // 삭제 이벤트
     map.on(L.Draw.Event.DELETED, function (e) {
       if(!isAdmin) return;
       e.layers.eachLayer(function (layer) {
@@ -163,7 +266,7 @@
       });
     });
 
-    // 5. 실시간 DB 수신 및 필터링
+    // 5. DB 실시간 수신 및 표시
     sceneryRef.on('value', function(snapshot) {
       rawSceneryData = snapshot.val() || {};
       filterSceneries();
@@ -179,15 +282,28 @@
         const item = rawSceneryData[id];
         const paywareStatus = item.properties.payware || "free";
 
-        // 토글 상태 체크
         if ((paywareStatus === "free" && showFree) || (paywareStatus === "payware" && showPayware)) {
+          const isPay = paywareStatus === "payware";
+          
           const layer = L.geoJSON(item, {
             style: function() {
-              return { color: paywareStatus === "payware" ? "#ff4d4d" : "#3388ff" };
+              return { 
+                color: isPay ? "#ff3333" : "#0066ff", 
+                weight: 2, 
+                fillOpacity: 0.35 
+              };
             },
             onEachFeature: function(feature, layer) {
-              const tag = feature.properties.payware === "payware" ? "[유료]" : "[무료]";
-              layer.bindPopup(`<b>${tag} ${feature.properties.title}</b>`);
+              const props = feature.properties;
+              const tag = props.payware === "payware" ? "<b style='color:red;'>[유료]</b>" : "<b style='color:blue;'>[무료]</b>";
+              
+              let popupContent = `<div style='font-size:13px;'>`;
+              popupContent += `<h4>${tag} ${props.title}</h4>`;
+              if(props.desc) popupContent += `<p style='margin:5px 0;'>${props.desc}</p>`;
+              if(props.link) popupContent += `<a href='${props.link}' target='_blank' style='color:#007bff; font-weight:bold;'>[다운로드 / 링크]</a>`;
+              popupContent += `</div>`;
+
+              layer.bindPopup(popupContent);
             }
           });
           
