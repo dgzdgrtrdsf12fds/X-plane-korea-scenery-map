@@ -183,6 +183,9 @@
     let rawSceneryData = {};
     let pendingLayer = null;
 
+    // 포토시너리 감춤 기준 줌 레벨 설정 (Zoom 8 미만시 포토시너리 안보임)
+    const MIN_PHOTO_ZOOM = 8;
+
     // 3. 관리자 로그인
     function openLoginModal() {
       if(isAdmin) {
@@ -254,7 +257,10 @@
     // 5. 클릭 및 지점 추가 처리
     let isZooming = false;
     map.on('zoomstart', function() { isZooming = true; });
-    map.on('zoomend', function() { setTimeout(() => { isZooming = false; }, 200); });
+    map.on('zoomend', function() { 
+      setTimeout(() => { isZooming = false; }, 200);
+      filterSceneries(); // 줌 변경 완료 시 시너리 재필터링 (포토시너리 숨김/표시 연동)
+    });
 
     map.on('click', function(e) {
       if (!isAdmin || !currentMode || isZooming) return;
@@ -374,7 +380,7 @@
       closeSceneryModal();
     }
 
-    // 7. DB 수신 및 지도 표시
+    // 7. DB 수신 및 지도 표시 (줌 레벨 제어 적용)
     sceneryRef.on('value', function(snapshot) {
       rawSceneryData = snapshot.val() || {};
       filterSceneries();
@@ -385,6 +391,7 @@
 
       const showFree = document.getElementById('showFree').checked;
       const showPayware = document.getElementById('showPayware').checked;
+      const currentZoom = map.getZoom();
 
       for(let id in rawSceneryData) {
         const item = rawSceneryData[id];
@@ -394,6 +401,16 @@
           props = item.features[0].properties;
         }
         if (!props) continue;
+
+        // GeoJSON 형태를 기반으로 포토시너리/다각형(Polygon) 여부 감지
+        const isPolygon = item.geometry?.type === "Polygon" || 
+                          item.geometry?.type === "MultiPolygon" || 
+                          (item.features && item.features.some(f => f.geometry?.type?.includes("Polygon")));
+
+        // 줌 레벨이 MIN_PHOTO_ZOOM(8) 미만일 때 포토시너리 감추기
+        if (isPolygon && currentZoom < MIN_PHOTO_ZOOM) {
+          continue;
+        }
 
         const paywareStatus = props.payware || "free";
 
