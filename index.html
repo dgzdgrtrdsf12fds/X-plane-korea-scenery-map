@@ -140,23 +140,23 @@
   </div>
 
   <!-- Leaflet JS -->
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-<!-- Firebase SDK (필수 2개 모듈) -->
-<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+  <!-- Firebase SDK (v10 Compat 버전) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 
   <script>
     // 1. Firebase 연동
     const firebaseConfig = {
-  apiKey: "AIzaSyCW_5sfgnxKduTt5sozveE2yug8b7mtvpk",
-  authDomain: "x-plane-korea-scenery-map.firebaseapp.com",
-  databaseURL: "https://x-plane-korea-scenery-map-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "x-plane-korea-scenery-map",
-  storageBucket: "x-plane-korea-scenery-map.firebasestorage.app",
-  messagingSenderId: "79985711565",
-  appId: "1:79985711565:web:4067b2a11b364f1cadcc84"
-};
+      apiKey: "AIzaSyCW_5sfgnxKduTt5sozveE2yug8b7mtvpk",
+      authDomain: "x-plane-korea-scenery-map.firebaseapp.com",
+      databaseURL: "https://x-plane-korea-scenery-map-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "x-plane-korea-scenery-map",
+      storageBucket: "x-plane-korea-scenery-map.firebasestorage.app",
+      messagingSenderId: "79985711565",
+      appId: "1:79985711565:web:4067b2a11b364f1cadcc84"
+    };
     
     firebase.initializeApp(firebaseConfig);
     const database = firebase.database();
@@ -251,7 +251,7 @@
       document.getElementById('selectionText').innerText = '지도를 클릭해 영역 꼭짓점을 찍으세요 (0개)';
     }
 
-    // 5. 클릭 및 지점 추가 처리 (확대/축소 드래그 오작동 방지)
+    // 5. 클릭 및 지점 추가 처리
     let isZooming = false;
     map.on('zoomstart', function() { isZooming = true; });
     map.on('zoomend', function() { setTimeout(() => { isZooming = false; }, 200); });
@@ -263,8 +263,6 @@
       if (currentMode === 'airport') {
         pendingLayer = L.marker(e.latlng);
         openModalForData("공항 추가", "새 공항");
-        currentMode = null;
-        document.querySelectorAll('.menu-btn').forEach(b => b.classList.remove('active'));
       } 
       // [o4xp 1도 단위]
       else if (currentMode === 'o4xp') {
@@ -291,11 +289,8 @@
       }
     });
 
-    // 다각형 점 추가 및 실시간 그리기
     function addCityPoint(latlng) {
       polyPoints.push(latlng);
-
-      // 점 마커 표시
       const m = L.circleMarker(latlng, { radius: 5, color: '#dc3545', fillColor: '#fff', fillOpacity: 1 });
       tempLayerGroup.addLayer(m);
       polyMarkers.push(m);
@@ -326,7 +321,6 @@
       }
     }
 
-    // [선택 완료] 눌렀을 때 정보 입력 모달 호출
     function finishCurrentSelection() {
       if (currentMode === 'o4xp') {
         const keys = Object.keys(selectedGrids);
@@ -357,7 +351,7 @@
       pendingLayer = null;
     }
 
-    // 6. DB 저장 (공통 속성)
+    // 6. DB 저장 (GeoJSON 구조 표준화)
     function saveSceneryData() {
       if (!pendingLayer) return alert('저장할 영역 데이터가 없습니다.');
 
@@ -367,7 +361,12 @@
       const desc = document.getElementById('sceneryDesc').value;
 
       let geoJsonData = pendingLayer.toGeoJSON();
-      geoJsonData.properties = { title, payware, link, desc };
+      
+      if (geoJsonData.type === "FeatureCollection") {
+        geoJsonData.properties = { title, payware, link, desc };
+      } else {
+        geoJsonData.properties = { title, payware, link, desc };
+      }
 
       sceneryRef.push().set(geoJsonData);
 
@@ -375,7 +374,7 @@
       closeSceneryModal();
     }
 
-    // 7. DB 수신 및 표시
+    // 7. DB 수신 및 지도 표시
     sceneryRef.on('value', function(snapshot) {
       rawSceneryData = snapshot.val() || {};
       filterSceneries();
@@ -389,31 +388,47 @@
 
       for(let id in rawSceneryData) {
         const item = rawSceneryData[id];
-        const paywareStatus = item.properties.payware || "free";
+        
+        let props = item.properties;
+        if (!props && item.features && item.features.length > 0) {
+          props = item.features[0].properties;
+        }
+        if (!props) continue;
+
+        const paywareStatus = props.payware || "free";
 
         if ((paywareStatus === "free" && showFree) || (paywareStatus === "payware" && showPayware)) {
           const isPay = paywareStatus === "payware";
-          
+          const strokeColor = isPay ? "#ff3333" : "#0066ff";
+
           const layer = L.geoJSON(item, {
-            style: () => ({ color: isPay ? "#ff3333" : "#0066ff", weight: 2, fillOpacity: 0.35 }),
-            onEachFeature: function(feature, layer) {
-              const props = feature.properties;
+            style: function() {
+              return { color: strokeColor, weight: 2, fillOpacity: 0.35 };
+            },
+            pointToLayer: function(feature, latlng) {
+              return L.circleMarker(latlng, {
+                radius: 8,
+                fillColor: strokeColor,
+                color: "#ffffff",
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 0.9
+              });
+            },
+            onEachFeature: function(feature, l) {
               const tag = props.payware === "payware" ? "<b style='color:red;'>[유료]</b>" : "<b style='color:blue;'>[무료]</b>";
               
               let popupContent = `<div style='font-size:13px;'>`;
-              popupContent += `<h4>${tag} ${props.title}</h4>`;
+              popupContent += `<h4 style='margin:0 0 5px 0;'>${tag} ${props.title}</h4>`;
               if(props.desc) popupContent += `<p style='margin:5px 0;'>${props.desc}</p>`;
               if(props.link) popupContent += `<a href='${props.link}' target='_blank' style='color:#007bff; font-weight:bold;'>[다운로드 / 링크]</a>`;
               popupContent += `</div>`;
 
-              layer.bindPopup(popupContent);
+              l.bindPopup(popupContent);
             }
           });
           
-          layer.eachLayer(function(l) {
-            l.firebaseId = id;
-            drawnItems.addLayer(l);
-          });
+          drawnItems.addLayer(layer);
         }
       }
     }
