@@ -5,13 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>X-Plane Korea Scenery Map</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; padding: 0; font-family: 'Pretendard', sans-serif; }
     #map { width: 100vw; height: 100vh; z-index: 1; }
 
-    /* 상단 제어바 (유료/무료, 관리자 로그인) */
+    /* 상단 제어바 */
     .top-panel {
       position: absolute; top: 15px; right: 15px; z-index: 1000;
       background: rgba(255, 255, 255, 0.95); padding: 10px 16px; border-radius: 10px;
@@ -25,7 +24,7 @@
       border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 13px;
     }
 
-    /* 좌측 작업 메뉴 (추가 버튼들) */
+    /* 좌측 추가 메뉴 */
     .left-menu {
       position: absolute; top: 15px; left: 15px; z-index: 1000;
       display: none; flex-direction: column; gap: 8px; width: 150px;
@@ -39,19 +38,20 @@
     .menu-btn:hover { background: #f0f7ff; }
     .menu-btn.active { background: #dc3545; color: white; border-color: #dc3545; }
 
-    /* 1도 격자 선택 모드 하단 완료바 */
+    /* 하단 선택 및 완성 제어 바 */
     .selection-bar {
       position: absolute; bottom: 25px; left: 50%; transform: translateX(-50%); z-index: 1000;
-      background: rgba(0, 0, 0, 0.85); color: white; padding: 12px 24px; border-radius: 30px;
-      display: none; gap: 15px; align-items: center; box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+      background: rgba(0, 0, 0, 0.85); color: white; padding: 10px 20px; border-radius: 30px;
+      display: none; gap: 10px; align-items: center; box-shadow: 0 4px 16px rgba(0,0,0,0.3);
     }
     .selection-bar button {
-      padding: 6px 16px; border: none; border-radius: 20px; font-weight: bold; cursor: pointer;
+      padding: 6px 14px; border: none; border-radius: 20px; font-weight: bold; cursor: pointer; font-size: 13px;
     }
     .btn-complete { background: #28a745; color: white; }
+    .btn-undo { background: #ffc107; color: #222; }
     .btn-cancel { background: #6c757d; color: white; }
 
-    /* 입력 모달 (팝업창) */
+    /* 모달 팝업 */
     .modal {
       display: none; position: fixed; z-index: 2000; left: 0; top: 0;
       width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);
@@ -74,6 +74,7 @@
 </head>
 <body>
 
+  <!-- 1. 상단 제어바 -->
   <div class="top-panel">
     <div class="filter-group">
       <label><input type="checkbox" id="showFree" checked onchange="filterSceneries()"> 무료 보기</label>
@@ -82,20 +83,24 @@
     <button class="admin-login-btn" id="adminToggleBtn" onclick="openLoginModal()">관리자 로그인</button>
   </div>
 
+  <!-- 2. 좌측 추가 메뉴 -->
   <div class="left-menu" id="leftMenu">
     <button class="menu-btn" id="btnAirport" onclick="startAirportMode()">추가 (공항)</button>
     <button class="menu-btn" id="btnO4xp" onclick="startO4xpMode()">추가 (o4xp 시너리)</button>
     <button class="menu-btn" id="btnCity" onclick="startCityMode()">추가 (도심 시너리)</button>
   </div>
 
+  <!-- 3. 작업 하단 안내 및 컨트롤 바 -->
   <div class="selection-bar" id="selectionBar">
-    <span id="selectedCountText">선택된 영역: 0개 (1도 격자)</span>
-    <button class="btn-complete" onclick="finishO4xpSelection()">선택 완료</button>
-    <button class="btn-cancel" onclick="cancelO4xpSelection()">취소</button>
+    <span id="selectionText">선택중...</span>
+    <button class="btn-complete" id="btnComplete" onclick="finishCurrentSelection()">선택 완료</button>
+    <button class="btn-undo" id="btnUndo" onclick="undoLastPoint()" style="display:none;">마지막 점 취소</button>
+    <button class="btn-cancel" onclick="resetModes()">취소</button>
   </div>
 
   <div id="map"></div>
 
+  <!-- 관리자 로그인 모달 -->
   <div id="loginModal" class="modal">
     <div class="modal-content" style="text-align: center;">
       <h3>관리자 로그인</h3>
@@ -107,6 +112,7 @@
     </div>
   </div>
 
+  <!-- 공통 속성 입력 모달 -->
   <div id="sceneryModal" class="modal">
     <div class="modal-content">
       <h3 id="modalHeaderTitle">시너리 정보 입력</h3>
@@ -134,7 +140,6 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 
@@ -155,24 +160,27 @@
     const sceneryRef = database.ref('sceneries');
 
     // 2. 지도 생성 (Google Hybrid 타일)
-    const map = L.map('map').setView([36.5, 127.5], 7);
+    const map = L.map('map', { doubleClickZoom: false }).setView([36.5, 127.5], 7);
     L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
       attribution: '&copy; Google Maps'
     }).addTo(map);
 
     let isAdmin = false;
     let currentMode = null; // 'airport', 'o4xp', 'city'
+    
+    // 임시 레이어 관련 변수
     let selectedGrids = {}; 
-    let tempHighlightGroup = L.featureGroup().addTo(map);
+    let polyPoints = [];
+    let polyMarkers = [];
+    let tempPolyline = null;
+    let tempPolygon = null;
 
+    let tempLayerGroup = L.featureGroup().addTo(map);
+    let drawnItems = new L.FeatureGroup().addTo(map);
     let rawSceneryData = {};
     let pendingLayer = null;
-    let drawnItems = new L.FeatureGroup();
-    map.addLayer(drawnItems);
 
-    let polygonDrawer = new L.Draw.Polygon(map);
-
-    // 3. 관리자 로그인 처리
+    // 3. 관리자 로그인
     function openLoginModal() {
       if(isAdmin) {
         isAdmin = false;
@@ -201,92 +209,137 @@
       }
     }
 
-    // 모드 초기화
+    // 초기화
     function resetModes() {
       currentMode = null;
       document.querySelectorAll('.menu-btn').forEach(b => b.classList.remove('active'));
       document.getElementById('selectionBar').style.display = 'none';
+      document.getElementById('btnUndo').style.display = 'none';
+      
       selectedGrids = {};
-      tempHighlightGroup.clearLayers();
-      polygonDrawer.disable();
+      polyPoints = [];
+      polyMarkers = [];
+      tempPolyline = null;
+      tempPolygon = null;
+      tempLayerGroup.clearLayers();
     }
 
-    // 4. 모드별 동작 설정
-    // A. 공항 추가 모드
+    // 4. 추가 모드 변경
     function startAirportMode() {
       resetModes();
       currentMode = 'airport';
       document.getElementById('btnAirport').classList.add('active');
     }
 
-    // B. o4xp 1도 단위 시너리 추가 모드
     function startO4xpMode() {
       resetModes();
       currentMode = 'o4xp';
       document.getElementById('btnO4xp').classList.add('active');
       document.getElementById('selectionBar').style.display = 'flex';
+      document.getElementById('selectionText').innerText = '선택된 영역: 0개 (1도 격자)';
     }
 
-    // C. 도심 시너리 (다각형) 추가 모드
     function startCityMode() {
       resetModes();
       currentMode = 'city';
       document.getElementById('btnCity').classList.add('active');
-      polygonDrawer.enable(); // 다각형 그리기 활성화
+      document.getElementById('selectionBar').style.display = 'flex';
+      document.getElementById('btnUndo').style.display = 'inline-block';
+      document.getElementById('selectionText').innerText = '지도를 클릭해 영역 꼭짓점을 찍으세요 (0개)';
     }
 
-    // 5. 지도 클릭 이벤트 처리
-    map.on('click', function(e) {
-      if (!isAdmin || !currentMode) return;
+    // 5. 클릭 및 지점 추가 처리 (확대/축소 드래그 오작동 방지)
+    let isZooming = false;
+    map.on('zoomstart', function() { isZooming = true; });
+    map.on('zoomend', function() { setTimeout(() => { isZooming = false; }, 200); });
 
-      // [공항] 모드 클릭 시
+    map.on('click', function(e) {
+      if (!isAdmin || !currentMode || isZooming) return;
+
+      // [공항 추가]
       if (currentMode === 'airport') {
         pendingLayer = L.marker(e.latlng);
         openModalForData("공항 추가", "새 공항");
-        resetModes();
+        currentMode = null;
+        document.querySelectorAll('.menu-btn').forEach(b => b.classList.remove('active'));
       } 
-      // [o4xp] 모드 클릭 시 (1도 단위 격자 토글)
+      // [o4xp 1도 단위]
       else if (currentMode === 'o4xp') {
         const lat = Math.floor(e.latlng.lat);
         const lng = Math.floor(e.latlng.lng);
         const key = `${lat}_${lng}`;
 
         if (selectedGrids[key]) {
-          tempHighlightGroup.removeLayer(selectedGrids[key].layer);
+          tempLayerGroup.removeLayer(selectedGrids[key].layer);
           delete selectedGrids[key];
         } else {
           const bounds = [[lat, lng], [lat + 1, lng + 1]];
           const rect = L.rectangle(bounds, { color: "#007bff", weight: 2, fillColor: "#0055ff", fillOpacity: 0.4 });
-          tempHighlightGroup.addLayer(rect);
+          tempLayerGroup.addLayer(rect);
           selectedGrids[key] = { bounds: bounds, layer: rect };
         }
 
         const count = Object.keys(selectedGrids).length;
-        document.getElementById('selectedCountText').innerText = `선택된 영역: ${count}개 (1도 격자)`;
+        document.getElementById('selectionText').innerText = `선택된 영역: ${count}개 (1도 격자)`;
+      }
+      // [도심 다각형 직접 그리기]
+      else if (currentMode === 'city') {
+        addCityPoint(e.latlng);
       }
     });
 
-    // [도심 시너리] 다각형 그리기 완료 시
-    map.on(L.Draw.Event.CREATED, function (e) {
-      if (e.layerType === 'polygon') {
-        pendingLayer = e.layer;
-        openModalForData("도심 시너리 추가", "서울/도심 시너리");
-        resetModes();
+    // 다각형 점 추가 및 실시간 그리기
+    function addCityPoint(latlng) {
+      polyPoints.push(latlng);
+
+      // 점 마커 표시
+      const m = L.circleMarker(latlng, { radius: 5, color: '#dc3545', fillColor: '#fff', fillOpacity: 1 });
+      tempLayerGroup.addLayer(m);
+      polyMarkers.push(m);
+
+      updatePolyDrawing();
+      document.getElementById('selectionText').innerText = `선택된 지점: ${polyPoints.length}개`;
+    }
+
+    function undoLastPoint() {
+      if (polyPoints.length === 0) return;
+      polyPoints.pop();
+      const lastMarker = polyMarkers.pop();
+      if(lastMarker) tempLayerGroup.removeLayer(lastMarker);
+      updatePolyDrawing();
+      document.getElementById('selectionText').innerText = `선택된 지점: ${polyPoints.length}개`;
+    }
+
+    function updatePolyDrawing() {
+      if (tempPolyline) tempLayerGroup.removeLayer(tempPolyline);
+      if (tempPolygon) tempLayerGroup.removeLayer(tempPolygon);
+
+      if (polyPoints.length >= 3) {
+        tempPolygon = L.polygon(polyPoints, { color: '#dc3545', weight: 2, fillColor: '#dc3545', fillOpacity: 0.35 });
+        tempLayerGroup.addLayer(tempPolygon);
+      } else if (polyPoints.length === 2) {
+        tempPolyline = L.polyline(polyPoints, { color: '#dc3545', weight: 2 });
+        tempLayerGroup.addLayer(tempPolyline);
       }
-    });
-
-    // o4xp 선택 완료 버튼
-    function finishO4xpSelection() {
-      const keys = Object.keys(selectedGrids);
-      if (keys.length === 0) return alert('선택된 격자가 없습니다.');
-      openModalForData("o4xp 시너리 추가", `o4xp 시너리 (${keys.length}개 격자)`);
     }
 
-    function cancelO4xpSelection() {
-      resetModes();
+    // [선택 완료] 눌렀을 때 정보 입력 모달 호출
+    function finishCurrentSelection() {
+      if (currentMode === 'o4xp') {
+        const keys = Object.keys(selectedGrids);
+        if (keys.length === 0) return alert('선택된 격자가 없습니다.');
+        
+        let layersArr = keys.map(k => L.rectangle(selectedGrids[k].bounds));
+        pendingLayer = L.featureGroup(layersArr);
+        openModalForData("o4xp 시너리 추가", `o4xp 시너리 (${keys.length}개 격자)`);
+      } else if (currentMode === 'city') {
+        if (polyPoints.length < 3) return alert('다각형 구역을 만들려면 최소 3개 이상의 지점을 찍어야 합니다.');
+        
+        pendingLayer = L.polygon(polyPoints);
+        openModalForData("도심 시너리 추가", "도심 시너리 구역");
+      }
     }
 
-    // 모달 표시 함수
     function openModalForData(headerTitle, defaultName) {
       document.getElementById('modalHeaderTitle').innerText = headerTitle;
       document.getElementById('sceneryTitle').value = defaultName;
@@ -301,25 +354,16 @@
       pendingLayer = null;
     }
 
-    // 6. DB 데이터 저장 (공통 속성 적용)
+    // 6. DB 저장 (공통 속성)
     function saveSceneryData() {
+      if (!pendingLayer) return alert('저장할 영역 데이터가 없습니다.');
+
       const title = document.getElementById('sceneryTitle').value || "이름 없음";
       const payware = document.getElementById('sceneryType').value;
       const link = document.getElementById('sceneryLink').value;
       const desc = document.getElementById('sceneryDesc').value;
 
-      let geoJsonData;
-
-      const gridKeys = Object.keys(selectedGrids);
-      if (gridKeys.length > 0) {
-        let layersArr = gridKeys.map(k => L.rectangle(selectedGrids[k].bounds));
-        geoJsonData = L.featureGroup(layersArr).toGeoJSON();
-      } else if (pendingLayer) {
-        geoJsonData = pendingLayer.toGeoJSON();
-      } else {
-        return;
-      }
-
+      let geoJsonData = pendingLayer.toGeoJSON();
       geoJsonData.properties = { title, payware, link, desc };
 
       sceneryRef.push().set(geoJsonData);
@@ -328,7 +372,7 @@
       closeSceneryModal();
     }
 
-    // 7. DB 데이터 실시간 표시 및 필터링
+    // 7. DB 수신 및 표시
     sceneryRef.on('value', function(snapshot) {
       rawSceneryData = snapshot.val() || {};
       filterSceneries();
