@@ -13,13 +13,31 @@
     .control-panel {
       position: absolute; top: 10px; right: 10px; z-index: 1000;
       background: rgba(255, 255, 255, 0.95); padding: 10px 15px; border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; gap: 12px; align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3); display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
     }
     .admin-btn {
-      background: #007bff; color: white; border: none; padding: 6px 14px;
+      background: #007bff; color: white; border: none; padding: 6px 12px;
       border-radius: 4px; cursor: pointer; font-weight: bold;
     }
+    .action-btn {
+      background: #28a745; color: white; border: none; padding: 6px 12px;
+      border-radius: 4px; cursor: pointer; font-weight: bold; display: none;
+    }
+    .action-btn.airport-btn { background: #17a2b8; }
+    .action-btn.active { background: #dc3545; }
     .filter-group label { margin-right: 8px; font-size: 14px; cursor: pointer; font-weight: bold; }
+
+    /* 영역 선택 완료 안내 바 */
+    .selection-bar {
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;
+      background: rgba(0, 0, 0, 0.85); color: white; padding: 12px 24px; border-radius: 30px;
+      display: none; gap: 15px; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+    .selection-bar button {
+      padding: 6px 16px; border: none; border-radius: 20px; font-weight: bold; cursor: pointer;
+    }
+    .btn-complete { background: #28a745; color: white; }
+    .btn-cancel { background: #6c757d; color: white; }
 
     .modal {
       display: none; position: fixed; z-index: 2000; left: 0; top: 0;
@@ -27,17 +45,13 @@
       justify-content: center; align-items: center;
     }
     .modal-content {
-      background: white; padding: 20px; border-radius: 8px; width: 330px; text-align: left;
+      background: white; padding: 20px; border-radius: 8px; width: 320px; text-align: left;
     }
     .modal-content h3 { margin-top: 0; text-align: center; }
     .modal-content label { font-size: 13px; font-weight: bold; display: block; margin-top: 8px; }
     .modal-content input, .modal-content select, .modal-content textarea {
       width: 100%; padding: 6px; margin-top: 4px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px;
     }
-    .grid-size-group {
-      display: flex; gap: 8px; margin-top: 4px;
-    }
-    .grid-size-group div { flex: 1; }
     .modal-btns { margin-top: 15px; text-align: center; }
     .modal-btns button { padding: 6px 14px; margin: 0 4px; cursor: pointer; }
   </style>
@@ -49,12 +63,19 @@
       <label><input type="checkbox" id="showFree" checked onchange="filterSceneries()"> 무료 보기</label>
       <label><input type="checkbox" id="showPayware" checked onchange="filterSceneries()"> 유료 보기</label>
     </div>
+    <button class="action-btn airport-btn" id="addAirportBtn" onclick="toggleAirportMode()">공항/마커 추가</button>
+    <button class="action-btn" id="gridSelectBtn" onclick="toggleGridSelectMode()">1도 격자 선택 모드</button>
     <button class="admin-btn" id="adminToggleBtn" onclick="openLoginModal()">관리자 로그인</button>
+  </div>
+
+  <div class="selection-bar" id="selectionBar">
+    <span id="selectedCountText">선택된 영역: 0개 (1도 격자)</span>
+    <button class="btn-complete" onclick="finishGridSelection()">선택 완료 및 정보 입력</button>
+    <button class="btn-cancel" onclick="cancelGridSelection()">취소</button>
   </div>
 
   <div id="map"></div>
 
-  <!-- 관리자 로그인 모달 -->
   <div id="loginModal" class="modal">
     <div class="modal-content" style="text-align: center;">
       <h3>관리자 로그인</h3>
@@ -66,25 +87,11 @@
     </div>
   </div>
 
-  <!-- 시너리 정보 입력 및 1도 단위 범위 지정 모달 -->
   <div id="sceneryModal" class="modal">
     <div class="modal-content">
-      <h3>시너리 정보 및 범위 설정</h3>
-      <label>시너리 이름</label>
-      <input type="text" id="sceneryTitle" placeholder="예: 한반도 남부 포토시너리">
-      
-      <!-- 1도 단위 범위 확장 설정 -->
-      <label>격자 범위 지정 (1도 단위 커스텀)</label>
-      <div class="grid-size-group">
-        <div>
-          <span style="font-size:11px;">위도 크기(도)</span>
-          <input type="number" id="latSpan" value="1" min="1" max="10">
-        </div>
-        <div>
-          <span style="font-size:11px;">경도 크기(도)</span>
-          <input type="number" id="lngSpan" value="1" min="1" max="10">
-        </div>
-      </div>
+      <h3 id="modalHeaderTitle">시너리 정보 입력</h3>
+      <label>이름 / 공항명</label>
+      <input type="text" id="sceneryTitle" placeholder="예: RKSI 인천국제공항 / 서울 도심">
 
       <label>유료 / 무료 구분</label>
       <select id="sceneryType">
@@ -96,7 +103,7 @@
       <input type="url" id="sceneryLink" placeholder="https://...">
 
       <label>상세 설명</label>
-      <textarea id="sceneryDesc" rows="3" placeholder="시너리 관련 설명 입력"></textarea>
+      <textarea id="sceneryDesc" rows="3" placeholder="시너리 관련 추가 설명을 입력하세요"></textarea>
 
       <div class="modal-btns">
         <button onclick="saveSceneryData()">저장</button>
@@ -107,12 +114,12 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-  
+
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
 
   <script>
-    // 1. Firebase 설정 (본인 프로젝트 설정으로 교체)
+    // 1. Firebase 설정
     const firebaseConfig = {
       apiKey: "YOUR_FIREBASE_API_KEY",
       authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
@@ -134,17 +141,24 @@
     }).addTo(map);
 
     let isAdmin = false;
+    let isGridMode = false;
+    let isAirportMode = false;
+    let selectedGrids = {}; 
+    let tempHighlightGroup = L.featureGroup().addTo(map);
+
     let rawSceneryData = {};
-    let baseClickLat = null;
-    let baseClickLng = null;
     let pendingLayer = null;
     let drawnItems = new L.FeatureGroup();
     map.addLayer(drawnItems);
 
     let drawControl = new L.Control.Draw({
       draw: {
-        polyline: false, polygon: false, circle: false, circlemarker: false,
-        marker: true, rectangle: true
+        polyline: false,
+        polygon: true,   // 도심 시너리용 다각형
+        rectangle: true, // 사각형
+        marker: true,    // 기본 마커
+        circle: false,
+        circlemarker: false
       },
       edit: { featureGroup: drawnItems, remove: true }
     });
@@ -155,6 +169,10 @@
         isAdmin = false;
         map.removeControl(drawControl);
         document.getElementById('adminToggleBtn').innerText = '관리자 로그인';
+        document.getElementById('gridSelectBtn').style.display = 'none';
+        document.getElementById('addAirportBtn').style.display = 'none';
+        cancelGridSelection();
+        cancelAirportMode();
         alert('로그아웃 되었습니다.');
       } else {
         document.getElementById('loginModal').style.display = 'flex';
@@ -171,46 +189,141 @@
         isAdmin = true;
         map.addControl(drawControl);
         document.getElementById('adminToggleBtn').innerText = '관리자 (로그아웃)';
+        document.getElementById('gridSelectBtn').style.display = 'inline-block';
+        document.getElementById('addAirportBtn').style.display = 'inline-block';
         closeLoginModal();
-        alert('관리자 모드 활성화\n\n지도 클릭 시 1도 단위 범위(위도/경도 크기 지정)로 시너리를 추가할 수 있습니다.');
+        alert('관리자 로그인 완료!\n\n- [공항/마커 추가]: 지도 클릭 시 공항 위치에 마커 추가\n- [1도 격자 선택 모드]: 클릭하여 1도 영역 추가/취소');
       } else {
         alert('비밀번호가 틀렸습니다.');
       }
     }
 
-    // 4. 지도 클릭 시 선택한 위치 기반 1도 단위 범위 지정
+    // 4. 공항 추가 모드 토글
+    function toggleAirportMode() {
+      if(isGridMode) cancelGridSelection();
+      isAirportMode = !isAirportMode;
+      const btn = document.getElementById('addAirportBtn');
+      
+      if(isAirportMode) {
+        btn.classList.add('active');
+        btn.innerText = '공항 추가 취소';
+      } else {
+        cancelAirportMode();
+      }
+    }
+
+    function cancelAirportMode() {
+      isAirportMode = false;
+      const btn = document.getElementById('addAirportBtn');
+      btn.classList.remove('active');
+      btn.innerText = '공항/마커 추가';
+    }
+
+    // 5. 1도 격자 클릭 및 선택/해제 기능
+    function toggleGridSelectMode() {
+      if(isAirportMode) cancelAirportMode();
+      isGridMode = !isGridMode;
+      const btn = document.getElementById('gridSelectBtn');
+      
+      if(isGridMode) {
+        btn.classList.add('active');
+        btn.innerText = '선택 종료';
+        document.getElementById('selectionBar').style.display = 'flex';
+      } else {
+        cancelGridSelection();
+      }
+    }
+
+    // 지도 클릭 이벤트 (공항 추가 및 1도 격자 클릭 토글)
     map.on('click', function(e) {
       if (!isAdmin) return;
-      if (document.querySelector('.leaflet-draw-actions')) return;
 
-      baseClickLat = Math.floor(e.latlng.lat);
-      baseClickLng = Math.floor(e.latlng.lng);
-      pendingLayer = null; // 클릭 기반 생성 처리
+      // 공항 추가 모드
+      if (isAirportMode) {
+        pendingLayer = L.marker(e.latlng);
+        document.getElementById('modalHeaderTitle').innerText = "공항 / 마커 정보 입력";
+        document.getElementById('sceneryTitle').value = "새 공항";
+        document.getElementById('sceneryType').value = 'free';
+        document.getElementById('sceneryLink').value = '';
+        document.getElementById('sceneryDesc').value = '';
+        document.getElementById('sceneryModal').style.display = 'flex';
+        cancelAirportMode();
+        return;
+      }
 
-      document.getElementById('sceneryTitle').value = `포토시너리 (+${baseClickLat}+${baseClickLng})`;
-      document.getElementById('latSpan').value = 1;
-      document.getElementById('lngSpan').value = 1;
+      // 1도 격자 선택 모드 (클릭시 선택/해제)
+      if (isGridMode) {
+        toggleGridAtLatLng(e.latlng);
+      }
+    });
+
+    function toggleGridAtLatLng(latlng) {
+      const lat = Math.floor(latlng.lat);
+      const lng = Math.floor(latlng.lng);
+      const key = `${lat}_${lng}`;
+
+      // 이미 선택되어 있으면 제거 (선택 취소)
+      if (selectedGrids[key]) {
+        tempHighlightGroup.removeLayer(selectedGrids[key].layer);
+        delete selectedGrids[key];
+      } else {
+        // 선택되지 않았으면 추가
+        const bounds = [[lat, lng], [lat + 1, lng + 1]];
+        const rect = L.rectangle(bounds, {
+          color: "#3388ff",
+          weight: 2,
+          fillColor: "#0055ff",
+          fillOpacity: 0.45
+        });
+
+        tempHighlightGroup.addLayer(rect);
+        selectedGrids[key] = { bounds: bounds, layer: rect };
+      }
+
+      const count = Object.keys(selectedGrids).length;
+      document.getElementById('selectedCountText').innerText = `선택된 영역: ${count}개 (1도 격자)`;
+    }
+
+    function finishGridSelection() {
+      const keys = Object.keys(selectedGrids);
+      if (keys.length === 0) {
+        alert('선택된 영역이 없습니다.');
+        return;
+      }
+
+      document.getElementById('modalHeaderTitle').innerText = "포토시너리 정보 입력";
+      document.getElementById('sceneryTitle').value = `포토시너리 (${keys.length}개 격자 구역)`;
       document.getElementById('sceneryType').value = 'free';
       document.getElementById('sceneryLink').value = '';
       document.getElementById('sceneryDesc').value = '';
-      
       document.getElementById('sceneryModal').style.display = 'flex';
-    });
+    }
 
-    // 도구함으로 직접 드래그해서 그릴 때
+    function cancelGridSelection() {
+      isGridMode = false;
+      selectedGrids = {};
+      tempHighlightGroup.clearLayers();
+      
+      const btn = document.getElementById('gridSelectBtn');
+      btn.classList.remove('active');
+      btn.innerText = '1도 격자 선택 모드';
+      document.getElementById('selectionBar').style.display = 'none';
+    }
+
+    // Leaflet Draw 도구 생성 이벤트
     map.on(L.Draw.Event.CREATED, function (e) {
       if(!isAdmin) return;
       pendingLayer = e.layer;
-      baseClickLat = null;
-      baseClickLng = null;
-
-      document.getElementById('sceneryTitle').value = "새 시너리 구역";
-      document.getElementById('latSpan').value = 1;
-      document.getElementById('lngSpan').value = 1;
+      
+      let defaultTitle = "새 시너리 구역";
+      if(e.layerType === "polygon") defaultTitle = "도심 시너리 구역";
+      if(e.layerType === "marker") defaultTitle = "새 공항 마커";
+      
+      document.getElementById('modalHeaderTitle').innerText = "시너리 정보 입력";
+      document.getElementById('sceneryTitle').value = defaultTitle;
       document.getElementById('sceneryType').value = 'free';
       document.getElementById('sceneryLink').value = '';
       document.getElementById('sceneryDesc').value = '';
-      
       document.getElementById('sceneryModal').style.display = 'flex';
     });
 
@@ -219,30 +332,29 @@
       pendingLayer = null;
     }
 
-    // DB 저장
+    // DB 저장 처리 (속성창 데이터 통일)
     function saveSceneryData() {
       const title = document.getElementById('sceneryTitle').value || "이름 없음";
       const payware = document.getElementById('sceneryType').value;
       const link = document.getElementById('sceneryLink').value;
       const desc = document.getElementById('sceneryDesc').value;
 
-      let targetLayer = pendingLayer;
+      let geoJsonData;
 
-      // 클릭 생성인 경우 설정된 1도 단위 위도/경도 크기 적용
-      if (!targetLayer && baseClickLat !== null && baseClickLng !== null) {
-        const latSpan = parseInt(document.getElementById('latSpan').value) || 1;
-        const lngSpan = parseInt(document.getElementById('lngSpan').value) || 1;
-
-        const bounds = [
-          [baseClickLat, baseClickLng], 
-          [baseClickLat + latSpan, baseClickLng + lngSpan]
-        ];
-        targetLayer = L.rectangle(bounds);
+      const gridKeys = Object.keys(selectedGrids);
+      if (gridKeys.length > 0) {
+        let layersArr = [];
+        gridKeys.forEach(k => {
+          layersArr.push(L.rectangle(selectedGrids[k].bounds));
+        });
+        const group = L.featureGroup(layersArr);
+        geoJsonData = group.toGeoJSON();
+      } else if (pendingLayer) {
+        geoJsonData = pendingLayer.toGeoJSON();
+      } else {
+        return;
       }
 
-      if (!targetLayer) return;
-
-      let geoJsonData = targetLayer.toGeoJSON();
       geoJsonData.properties = {
         title: title,
         payware: payware,
@@ -253,10 +365,11 @@
       const newRef = sceneryRef.push();
       newRef.set(geoJsonData);
 
+      cancelGridSelection();
       closeSceneryModal();
     }
 
-    // 삭제 이벤트
+    // 삭제 처리
     map.on(L.Draw.Event.DELETED, function (e) {
       if(!isAdmin) return;
       e.layers.eachLayer(function (layer) {
@@ -266,7 +379,7 @@
       });
     });
 
-    // 5. DB 실시간 수신 및 표시
+    // 6. DB 수신 및 표시
     sceneryRef.on('value', function(snapshot) {
       rawSceneryData = snapshot.val() || {};
       filterSceneries();
